@@ -97,6 +97,9 @@ func handleSingle(path string) error {
 	defer socket.Close()
 
 	// Get the master file descriptor from runC.
+	// 父子进程之间可以很方便的共享文件描述符
+	// 没有继承关系的进程之间可以通过unix套接字来传递进程中的文件描述符
+	// 通过文件描述符来构建tty
 	master, err := utils.RecvFd(socket)
 	if err != nil {
 		return err
@@ -109,6 +112,7 @@ func handleSingle(path string) error {
 
 	// Copy from our stdio to the master fd.
 	quitChan := make(chan struct{})
+	// 启动两个协程来拷贝数据
 	go func() {
 		io.Copy(os.Stdout, c)
 		quitChan <- struct{}{}

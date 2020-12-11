@@ -59,6 +59,7 @@ func CloseExecFrom(minFd int) error {
 }
 
 // NewSockPair returns a new unix socket pair
+//创建一对unix套接字
 func NewSockPair(name string) (parent *os.File, child *os.File, err error) {
 	fds, err := unix.Socketpair(unix.AF_LOCAL, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
 	if err != nil {

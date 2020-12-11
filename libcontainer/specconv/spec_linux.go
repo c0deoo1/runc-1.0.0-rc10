@@ -209,7 +209,7 @@ func CreateLibcontainerConfig(opts *CreateOpts) (*configs.Config, error) {
 		if config.NoPivotRoot && (config.RootPropagation&unix.MS_PRIVATE != 0) {
 			return nil, fmt.Errorf("rootfsPropagation of [r]private is not safe without pivot_root")
 		}
-
+		//spec中的namespace配置转换为libcontainer中的配置
 		for _, ns := range spec.Linux.Namespaces {
 			t, exists := namespaceMapping[ns.Type]
 			if !exists {
@@ -220,6 +220,7 @@ func CreateLibcontainerConfig(opts *CreateOpts) (*configs.Config, error) {
 			}
 			config.Namespaces.Add(t, ns.Path)
 		}
+		//如果配置了net namespace，但是没有指定路径，则默认创建loopback接口
 		if config.Namespaces.Contains(configs.NEWNET) && config.Namespaces.PathOf(configs.NEWNET) == "" {
 			config.Networks = []*configs.Network{
 				{
@@ -310,6 +311,7 @@ func CreateCgroupConfig(opts *CreateOpts) (*configs.Cgroup, error) {
 		Resources: &configs.Resources{},
 	}
 
+	//spec.Linux.CgroupsPath配置项有什么作用？什么时候会配置这个值
 	if spec.Linux != nil && spec.Linux.CgroupsPath != "" {
 		myCgroupPath = libcontainerUtils.CleanPath(spec.Linux.CgroupsPath)
 		if useSystemdCgroup {

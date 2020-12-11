@@ -52,6 +52,7 @@ type BaseState struct {
 	ID string `json:"id"`
 
 	// InitProcessPid is the init process id in the parent namespace.
+	// 父进程namespace中的pid
 	InitProcessPid int `json:"init_process_pid"`
 
 	// InitProcessStartTime is the init process start time in clock cycles since boot time.

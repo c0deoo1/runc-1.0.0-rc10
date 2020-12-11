@@ -8,6 +8,7 @@ import (
 	"github.com/opencontainers/runc/libcontainer/configs"
 )
 
+//CGroup管理类需要实现的接口
 type Manager interface {
 	// Applies cgroup configuration to the process with the specified pid
 	Apply(pid int) error

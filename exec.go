@@ -149,10 +149,13 @@ func execProcess(context *cli.Context) (int, error) {
 		consoleSocket:   context.String("console-socket"),
 		detach:          detach,
 		pidFile:         context.String("pid-file"),
-		action:          CT_ACT_RUN,
-		init:            false,
-		preserveFDs:     context.Int("preserve-fds"),
-		logLevel:        logLevel,
+		// 运行一个命令
+		action: CT_ACT_RUN,
+		// 在容器中执行命令的时候，这里容器已经存在了，无需初始化相关的namespace了，所以init为false
+		// 设置为false，说明namespace都已经存在了，只需要加入到其中即可
+		init:        false,
+		preserveFDs: context.Int("preserve-fds"),
+		logLevel:    logLevel,
 	}
 	return r.run(p)
 }
@@ -179,6 +182,7 @@ func getProcess(context *cli.Context, bundle string) (*specs.Process, error) {
 		return nil, err
 	}
 	p := spec.Process
+	//这里就是用户指定要运行的程序
 	p.Args = context.Args()[1:]
 	// override the cwd, if passed
 	if context.String("cwd") != "" {

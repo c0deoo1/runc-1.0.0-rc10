@@ -8,8 +8,11 @@ import (
 	"github.com/opencontainers/runc/libcontainer/utils"
 )
 
+//这个文件主要是实现父子进程之间的通信逻辑
 type syncType string
 
+// child为容器中的进程，parent为host中的进程
+// 这个就是初始化的顺序
 // Constants that are used for synchronisation between the parent and child
 // during container setup. They come in pairs (with procError being a generic
 // response which is followed by a &genericError).

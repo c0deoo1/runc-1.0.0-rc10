@@ -229,8 +229,9 @@ type initProcess struct {
 	container       *linuxContainer
 	fds             []string
 	process         *Process
-	bootstrapData   io.Reader
-	sharePidns      bool
+	// 包含了clone flag以及namespace相关的配置
+	bootstrapData io.Reader
+	sharePidns    bool
 }
 
 func (p *initProcess) pid() int {
@@ -251,6 +252,10 @@ func (p *initProcess) getChildPid() (int, error) {
 
 	// Clean up the zombie parent process
 	// On Unix systems FindProcess always succeeds.
+	// 以run create 为例，其会首先创建run init进程A，A会创建run init进程B，用来调用setns来设置namespace，B最终会创建run init进程C
+	// 最终进程C会exec容器的初始程序
+	// 这里的pid.PidFirstChild就是进程B的PID，pid.Pid就是进程C
+	// 由于pid.PidFirstChild只是用于调用setns，执行完就会推出，所以调用firstChildProcess.Wait()来回收其资源
 	firstChildProcess, _ := os.FindProcess(pid.PidFirstChild)
 
 	// Ignore the error in case the child has already been reaped for any reason
@@ -260,6 +265,7 @@ func (p *initProcess) getChildPid() (int, error) {
 }
 
 func (p *initProcess) waitForChildExit(childPid int) error {
+	// 这里的Process是runC init A
 	status, err := p.cmd.Process.Wait()
 	if err != nil {
 		p.cmd.Wait()
@@ -274,6 +280,7 @@ func (p *initProcess) waitForChildExit(childPid int) error {
 	if err != nil {
 		return err
 	}
+	// 这里的Process是runC init C
 	p.cmd.Process = process
 	p.process.ops = p
 	return nil
@@ -281,9 +288,11 @@ func (p *initProcess) waitForChildExit(childPid int) error {
 
 func (p *initProcess) start() error {
 	defer p.messageSockPair.parent.Close()
+	//开始运行进程  /proc/self/exe init
 	err := p.cmd.Start()
 	p.process.ops = p
 	// close the write-side of the pipes (controlled by child)
+	//管道的另外一端由子进程去write，这里本进程不需要，直接关闭
 	p.messageSockPair.child.Close()
 	p.logFilePair.child.Close()
 	if err != nil {
@@ -311,9 +320,13 @@ func (p *initProcess) start() error {
 		}
 	}()
 
+	// 将bootstrapData传递给子进程
+	// 这里的子进程实际是/proc/self/exe init
+	// 子进程的处理逻辑在nsexec.c文件中
 	if _, err := io.Copy(p.messageSockPair.parent, p.bootstrapData); err != nil {
 		return newSystemErrorWithCause(err, "copying bootstrap data to pipe")
 	}
+	//获取到最终的子进程的pid，也就是最终用于运行容器内初始化进程的PID
 	childPid, err := p.getChildPid()
 	if err != nil {
 		return newSystemErrorWithCause(err, "getting the final child's pid from pipe")
@@ -329,6 +342,7 @@ func (p *initProcess) start() error {
 	p.setExternalDescriptors(fds)
 	// Do this before syncing with child so that no children
 	// can escape the cgroup
+	// 做资源限制
 	if err := p.manager.Apply(childPid); err != nil {
 		return newSystemErrorWithCause(err, "applying cgroup configuration for process")
 	}
@@ -345,6 +359,8 @@ func (p *initProcess) start() error {
 	}
 
 	// Wait for our first child to exit
+	// Runc Init A --> Runc InitB -- > Runc Init C
+	// 这里是等待Runc Init A退出
 	if err := p.waitForChildExit(childPid); err != nil {
 		return newSystemErrorWithCause(err, "waiting for our first child to exit")
 	}
@@ -358,9 +374,11 @@ func (p *initProcess) start() error {
 			}
 		}
 	}()
+	// 创建网络接口
 	if err := p.createNetworkInterfaces(); err != nil {
 		return newSystemErrorWithCause(err, "creating network interfaces")
 	}
+	//发送配置文件给子进程
 	if err := p.sendConfig(); err != nil {
 		return newSystemErrorWithCause(err, "sending config to init process")
 	}
@@ -369,11 +387,13 @@ func (p *initProcess) start() error {
 		sentResume bool
 	)
 
+	//读取子进程同步过来的消息
 	ierr := parseSync(p.messageSockPair.parent, func(sync *syncT) error {
 		switch sync.Type {
 		case procReady:
 			// set rlimits, this has to be done here because we lose permissions
 			// to raise the limits once we enter a user-namespace
+			// 进入user-namespace之后就没有权限设置Rlimits了，所以子进程通知宿主机进程来做设置
 			if err := setupRlimits(p.config.Rlimits, p.pid()); err != nil {
 				return newSystemErrorWithCause(err, "setting rlimits for ready process")
 			}
@@ -405,6 +425,7 @@ func (p *initProcess) start() error {
 				}
 			}
 			// Sync with child.
+			// 通知子进程可以run了
 			if err := writeSync(p.messageSockPair.parent, procRun); err != nil {
 				return newSystemErrorWithCause(err, "writing syncT 'run'")
 			}
@@ -527,6 +548,7 @@ func (p *initProcess) setExternalDescriptors(newFds []string) {
 	p.fds = newFds
 }
 
+//读取初始化进程相关的日志
 func (p *initProcess) forwardChildLogs() {
 	go logs.ForwardLogs(p.logFilePair.parent)
 }

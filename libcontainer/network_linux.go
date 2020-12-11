@@ -20,6 +20,7 @@ var strategies = map[string]networkStrategy{
 
 // networkStrategy represents a specific network configuration for
 // a container's networking stack
+// 当前只实现了loopback接口
 type networkStrategy interface {
 	create(*network, int) error
 	initialize(*network) error
@@ -74,6 +75,8 @@ func getNetworkInterfaceStats(interfaceName string) (*types.NetworkInterface, er
 }
 
 // Reads the specified statistics available under /sys/class/net/<EthInterface>/statistics
+// /proc/net/dev 文件也有统计信息
+// 统计每个网络接口的统计数据
 func readSysfsNetworkStats(ethInterface, statsFile string) (uint64, error) {
 	data, err := ioutil.ReadFile(filepath.Join("/sys/class/net", ethInterface, "statistics", statsFile))
 	if err != nil {

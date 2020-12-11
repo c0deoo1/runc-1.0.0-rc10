@@ -16,6 +16,7 @@ import (
 
 // version will be populated by the Makefile, read from
 // VERSION file of the source code.
+// version、gitCommit通过编译时传入
 var version = ""
 
 // gitCommit will be the hash that the binary was built from
@@ -64,6 +65,12 @@ func main() {
 	v = append(v, fmt.Sprintf("spec: %s", specs.Version))
 	app.Version = strings.Join(v, "\n")
 
+	// 环境变量：XDG_RUNTIME_DIR ：针对每个用户的运行时目录。
+	// "What is XDG_RUNTIME_DIR?", it is an environment variable that is set automatically when you log in.
+	// It tells any program you run where to find a user-specific directory in which it can store small temporary files.
+	// 通常针对每个用户单独挂载一个 “tmpfs” 文件系统实例。
+	// 因为默认记录runc运行状态是在/run/runc目录，如果runc不能以root权限启动则不够权限，需要用到XDG_RUNTIME_DIR。
+	// root用于记录container的状态信息
 	root := "/run/runc"
 	if shouldHonorXDGRuntimeDir() {
 		if runtimeDir := os.Getenv("XDG_RUNTIME_DIR"); runtimeDir != "" {
@@ -74,6 +81,7 @@ func main() {
 			if err := os.MkdirAll(root, 0700); err != nil {
 				fatal(err)
 			}
+			// 只有 root/创建者 能 删除/移动 文件
 			if err := os.Chmod(root, 0700|os.ModeSticky); err != nil {
 				fatal(err)
 			}
@@ -105,10 +113,12 @@ func main() {
 			Value: "criu",
 			Usage: "path to the criu binary used for checkpoint and restore",
 		},
+		// TODO 含义？？
 		cli.BoolFlag{
 			Name:  "systemd-cgroup",
 			Usage: "enable systemd cgroup support, expects cgroupsPath to be of form \"slice:prefix:name\" for e.g. \"system.slice:runc:434234\"",
 		},
+		// TODO 含义？？
 		cli.StringFlag{
 			Name:  "rootless",
 			Value: "auto",

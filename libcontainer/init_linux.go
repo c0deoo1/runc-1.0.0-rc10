@@ -76,9 +76,12 @@ type initer interface {
 
 func newContainerInit(t initType, pipe *os.File, consoleSocket *os.File, fifoFd int) (initer, error) {
 	var config *initConfig
+	//从管道中读取配置
 	if err := json.NewDecoder(pipe).Decode(&config); err != nil {
 		return nil, err
 	}
+	// 在调用这个函数之前已经将父进程传递过来的环境变量清空了
+	// 设置配置中的环境变量
 	if err := populateProcessEnvironment(config.Env); err != nil {
 		return nil, err
 	}
@@ -90,6 +93,7 @@ func newContainerInit(t initType, pipe *os.File, consoleSocket *os.File, fifoFd 
 			config:        config,
 		}, nil
 	case initStandard:
+		//初始化流程
 		return &linuxStandardInit{
 			pipe:          pipe,
 			consoleSocket: consoleSocket,
@@ -374,6 +378,7 @@ func fixStdioPermissions(config *initConfig, u *user.ExecUser) error {
 }
 
 // setupNetwork sets up and initializes any network interface inside the container.
+// 网络初始化
 func setupNetwork(config *initConfig) error {
 	for _, config := range config.Networks {
 		strategy, err := getStrategy(config.Type)

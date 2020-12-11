@@ -233,6 +233,7 @@ func createContainer(context *cli.Context, id string, spec *specs.Spec) (libcont
 		return nil, err
 	}
 	config, err := specconv.CreateLibcontainerConfig(&specconv.CreateOpts{
+		//cgroup的名称就是容器id
 		CgroupName:       id,
 		UseSystemdCgroup: context.GlobalBool("systemd-cgroup"),
 		NoPivotRoot:      context.Bool("no-pivot"),
@@ -275,9 +276,11 @@ func (r *runner) run(config *specs.Process) (int, error) {
 			r.destroy()
 		}
 	}()
+	// 检查Terminal配置是否合法
 	if err = r.checkTerminal(config); err != nil {
 		return -1, err
 	}
+	//转换为libcontainer的process
 	process, err := newProcess(*config, r.init, r.logLevel)
 	if err != nil {
 		return -1, err
@@ -317,10 +320,12 @@ func (r *runner) run(config *specs.Process) (int, error) {
 
 	switch r.action {
 	case CT_ACT_CREATE:
+		//启动一个容器进程
 		err = r.container.Start(process)
 	case CT_ACT_RESTORE:
 		err = r.container.Restore(process, r.criuOpts)
 	case CT_ACT_RUN:
+		//在容器中运行一个进程
 		err = r.container.Run(process)
 	default:
 		panic("Unknown action")
@@ -400,12 +405,13 @@ const (
 	CT_ACT_RESTORE
 )
 
+// create、restore、run都会调用到这里
 func startContainer(context *cli.Context, spec *specs.Spec, action CtAct, criuOpts *libcontainer.CriuOpts) (int, error) {
 	id := context.Args().First()
 	if id == "" {
 		return -1, errEmptyID
 	}
-
+	// 主要是兼容 systemd 的 sd_notify协议
 	notifySocket := newNotifySocket(context, os.Getenv("NOTIFY_SOCKET"), id)
 	if notifySocket != nil {
 		notifySocket.setupSpec(context, spec)
@@ -424,6 +430,7 @@ func startContainer(context *cli.Context, spec *specs.Spec, action CtAct, criuOp
 	}
 
 	// Support on-demand socket activation by passing file descriptors into the container init process.
+	// 支持Systemd的 socket activation，传递文件描述符到容器的init进程
 	listenFDs := []*os.File{}
 	if os.Getenv("LISTEN_FDS") != "" {
 		listenFDs = activation.Files(false)
@@ -446,8 +453,9 @@ func startContainer(context *cli.Context, spec *specs.Spec, action CtAct, criuOp
 		preserveFDs:     context.Int("preserve-fds"),
 		action:          action,
 		criuOpts:        criuOpts,
-		init:            true,
-		logLevel:        logLevel,
+		// 这里就是init设置为true，初始进程
+		init:     true,
+		logLevel: logLevel,
 	}
 	return r.run(spec.Process)
 }

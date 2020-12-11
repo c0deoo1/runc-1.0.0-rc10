@@ -89,6 +89,7 @@ func cgroupfs2(l *LinuxFactory, rootless bool) error {
 // that use the native cgroups filesystem implementation to create and manage
 // cgroups.
 func Cgroupfs(l *LinuxFactory) error {
+	//是否启用了Cgroup2
 	if cgroups.IsCgroup2UnifiedMode() {
 		return cgroupfs2(l, false)
 	}
@@ -167,12 +168,15 @@ func New(root string, options ...func(*LinuxFactory) error) (Factory, error) {
 		}
 	}
 	l := &LinuxFactory{
-		Root:      root,
+		Root: root,
+		// 这里设置init程序为自己
+		// 初始化程序默认会处理init参数，也就是runC自己
 		InitPath:  "/proc/self/exe",
 		InitArgs:  []string{os.Args[0], "init"},
 		Validator: validate.New(),
 		CriuPath:  "criu",
 	}
+	//设置CGroup实现类
 	Cgroupfs(l)
 	for _, opt := range options {
 		if opt == nil {
@@ -251,6 +255,7 @@ func (l *LinuxFactory) Create(id string, config *configs.Config) (Container, err
 		criuPath:      l.CriuPath,
 		newuidmapPath: l.NewuidmapPath,
 		newgidmapPath: l.NewgidmapPath,
+		//创建模式下Paths为空
 		cgroupManager: l.NewCgroupsManager(config.Cgroups, nil),
 	}
 	if intelrdt.IsCatEnabled() || intelrdt.IsMbaEnabled() {
@@ -311,6 +316,7 @@ func (l *LinuxFactory) Type() string {
 
 // StartInitialization loads a container by opening the pipe fd from the parent to read the configuration and state
 // This is a low level implementation detail of the reexec and should not be consumed externally
+// 从管道那里读取配置信息以及状态，来做容器运行前的初始化
 func (l *LinuxFactory) StartInitialization() (err error) {
 	var (
 		pipefd, fifofd int
@@ -351,6 +357,7 @@ func (l *LinuxFactory) StartInitialization() (err error) {
 
 	// clear the current process's environment to clean any libcontainer
 	// specific env vars.
+	// 父进程传递过来的环境变量不再需要了，这里直接删除掉
 	os.Clearenv()
 
 	defer func() {

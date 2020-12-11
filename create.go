@@ -52,22 +52,27 @@ command(s) that get executed on start, edit the args parameter of the spec. See
 		},
 	},
 	Action: func(context *cli.Context) error {
+		//校验参数个数是否合法
 		if err := checkArgs(context, 1, exactArgs); err != nil {
 			return err
 		}
+		//将pid-file 转换为绝对路径
 		if err := revisePidFile(context); err != nil {
 			return err
 		}
+		//加载标准的配置文件,并简单校验配置文件的有效性
 		spec, err := setupSpec(context)
 		if err != nil {
 			return err
 		}
+		//创建容器
 		status, err := startContainer(context, spec, CT_ACT_CREATE, nil)
 		if err != nil {
 			return err
 		}
 		// exit with the container's exit status so any external supervisor is
 		// notified of the exit with the correct exit status.
+		// 将容器的退出状态透传出来
 		os.Exit(status)
 		return nil
 	},

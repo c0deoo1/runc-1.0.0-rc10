@@ -21,11 +21,11 @@ import (
 )
 
 type linuxStandardInit struct {
-	pipe          *os.File
-	consoleSocket *os.File
-	parentPid     int
+	pipe          *os.File //用于父子进程通信
+	consoleSocket *os.File //用于虚拟终端
+	parentPid     int      //父进程PID
 	fifoFd        int
-	config        *initConfig
+	config        *initConfig //父进程传递过来的配置信息
 }
 
 func (l *linuxStandardInit) getSessionRingParams() (string, uint32, uint32) {
@@ -45,6 +45,7 @@ func (l *linuxStandardInit) getSessionRingParams() (string, uint32, uint32) {
 }
 
 func (l *linuxStandardInit) Init() error {
+	//GORoutine锁定一个线程
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if !l.config.Config.NoNewKeyring {
@@ -77,14 +78,17 @@ func (l *linuxStandardInit) Init() error {
 		}
 	}
 
+	//初始化网络接口，RUNC目前只支持创建loopback接口
 	if err := setupNetwork(l.config); err != nil {
 		return err
 	}
+	//初始化路由配置
 	if err := setupRoute(l.config.Config); err != nil {
 		return err
 	}
 
 	label.Init()
+	//初始化文件系统，进行相关的挂载操作
 	if err := prepareRootfs(l.pipe, l.config); err != nil {
 		return err
 	}
@@ -143,6 +147,7 @@ func (l *linuxStandardInit) Init() error {
 	// Tell our parent that we're ready to Execv. This must be done before the
 	// Seccomp rules have been applied, because we need to be able to read and
 	// write to a socket.
+	// 通知父进程子进程初始化完成，发送procReady，等待procRun信号
 	if err := syncParentReady(l.pipe); err != nil {
 		return errors.Wrap(err, "sync ready")
 	}
@@ -189,6 +194,15 @@ func (l *linuxStandardInit) Init() error {
 	if err != nil {
 		return newSystemErrorWithCause(err, "open exec fifo")
 	}
+	// 阻塞模式，只有读取端调用了Read才会返回
+	// 通过这种方式可以先Create容器，之后再Start
+	//       If a process attempts to read from an empty pipe, then read(2) will
+	//       block until data is available.  If a process attempts to write to a
+	//       full pipe (see below), then write(2) blocks until sufficient data has
+	//       been read from the pipe to allow the write to complete.  Nonblocking
+	//       I/O is possible by using the fcntl(2) F_SETFL operation to enable the
+	//       O_NONBLOCK open file status flag.
+	// TODO 抓下堆栈验证一下确实是阻塞在这里？
 	if _, err := unix.Write(fd, []byte("0")); err != nil {
 		return newSystemErrorWithCause(err, "write 0 exec fifo")
 	}
@@ -207,6 +221,7 @@ func (l *linuxStandardInit) Init() error {
 			return newSystemErrorWithCause(err, "init seccomp")
 		}
 	}
+	//这里执行用户配置的进程，此时进程的命名空间都已经初始化好了
 	if err := syscall.Exec(name, l.config.Args[0:], os.Environ()); err != nil {
 		return newSystemErrorWithCause(err, "exec user process")
 	}

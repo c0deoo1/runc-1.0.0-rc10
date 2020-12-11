@@ -139,6 +139,7 @@ func GetClosestMountpointAncestor(dir, mountinfo string) string {
 	return deepestMountPoint
 }
 
+//通过解析/proc/self/mountinfo来获取cgroup的根路径
 func FindCgroupMountpointDir() (string, error) {
 	f, err := os.Open("/proc/self/mountinfo")
 	if err != nil {

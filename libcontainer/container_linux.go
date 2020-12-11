@@ -188,6 +188,8 @@ func (c *linuxContainer) Stats() (*Stats, error) {
 	for _, iface := range c.config.Networks {
 		switch iface.Type {
 		case "veth":
+			// 如果是veth对，直接读取host中的iterface的数据即可
+			// 通过/proc文件读取
 			istats, err := getNetworkInterfaceStats(iface.HostInterfaceName)
 			if err != nil {
 				return stats, newSystemErrorWithCausef(err, "getting network stats for interface %q", iface.HostInterfaceName)
@@ -234,6 +236,7 @@ func (c *linuxContainer) Start(process *Process) error {
 	c.m.Lock()
 	defer c.m.Unlock()
 	if process.Init {
+		//初始化进程的话，需要
 		if err := c.createExecFifo(); err != nil {
 			return err
 		}
@@ -340,7 +343,9 @@ func (c *linuxContainer) start(process *Process) error {
 	if err != nil {
 		return newSystemErrorWithCause(err, "creating new parent process")
 	}
+	//将子进程的日志从管道中读取出来输出
 	parent.forwardChildLogs()
+
 	if err := parent.start(); err != nil {
 		// terminate the process to ensure that it properly is reaped.
 		if err := ignoreTerminateErrors(parent.terminate()); err != nil {
@@ -442,6 +447,7 @@ func (c *linuxContainer) includeExecFifo(cmd *exec.Cmd) error {
 }
 
 func (c *linuxContainer) newParentProcess(p *Process) (parentProcess, error) {
+	//初始化父子进程通信的管道
 	parentInitPipe, childInitPipe, err := utils.NewSockPair("init")
 	if err != nil {
 		return nil, newSystemErrorWithCause(err, "creating new init pipe")
@@ -459,6 +465,7 @@ func (c *linuxContainer) newParentProcess(p *Process) (parentProcess, error) {
 		return nil, newSystemErrorWithCause(err, "creating new command template")
 	}
 	if !p.Init {
+		//这里是非初始化进程
 		return c.newSetnsProcess(p, cmd, messageSockPair, logFilePair)
 	}
 
@@ -470,20 +477,25 @@ func (c *linuxContainer) newParentProcess(p *Process) (parentProcess, error) {
 	if err := c.includeExecFifo(cmd); err != nil {
 		return nil, newSystemErrorWithCause(err, "including execfifo in cmd.Exec setup")
 	}
+	//初始化进程
 	return c.newInitProcess(p, cmd, messageSockPair, logFilePair)
 }
 
+// 创建子进程的模版，传入两个管道，一个用于通信，一个用于打印日志
 func (c *linuxContainer) commandTemplate(p *Process, childInitPipe *os.File, childLogPipe *os.File) (*exec.Cmd, error) {
 	cmd := exec.Command(c.initPath, c.initArgs[1:]...)
+	// 执行的是c.initPath command设置为c.initArgs[0]
 	cmd.Args[0] = c.initArgs[0]
 	cmd.Stdin = p.Stdin
 	cmd.Stdout = p.Stdout
 	cmd.Stderr = p.Stderr
+	// rootFS的地址
 	cmd.Dir = c.config.Rootfs
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
 	cmd.Env = append(cmd.Env, fmt.Sprintf("GOMAXPROCS=%s", os.Getenv("GOMAXPROCS")))
+	//将一些套接字传递给子进程
 	cmd.ExtraFiles = append(cmd.ExtraFiles, p.ExtraFiles...)
 	if p.ConsoleSocket != nil {
 		cmd.ExtraFiles = append(cmd.ExtraFiles, p.ConsoleSocket)
@@ -491,12 +503,14 @@ func (c *linuxContainer) commandTemplate(p *Process, childInitPipe *os.File, chi
 			fmt.Sprintf("_LIBCONTAINER_CONSOLE=%d", stdioFdCount+len(cmd.ExtraFiles)-1),
 		)
 	}
+	// ExtraFiles中数组中的索引0的文件的文件描述符为3(stdioFdCount),以此类推
 	cmd.ExtraFiles = append(cmd.ExtraFiles, childInitPipe)
 	cmd.Env = append(cmd.Env,
 		fmt.Sprintf("_LIBCONTAINER_INITPIPE=%d", stdioFdCount+len(cmd.ExtraFiles)-1),
 		fmt.Sprintf("_LIBCONTAINER_STATEDIR=%s", c.root),
 	)
 
+	// pipe的一端传入到子进程中
 	cmd.ExtraFiles = append(cmd.ExtraFiles, childLogPipe)
 	cmd.Env = append(cmd.Env,
 		fmt.Sprintf("_LIBCONTAINER_LOGPIPE=%d", stdioFdCount+len(cmd.ExtraFiles)-1),
@@ -515,12 +529,14 @@ func (c *linuxContainer) commandTemplate(p *Process, childInitPipe *os.File, chi
 func (c *linuxContainer) newInitProcess(p *Process, cmd *exec.Cmd, messageSockPair, logFilePair filePair) (*initProcess, error) {
 	cmd.Env = append(cmd.Env, "_LIBCONTAINER_INITTYPE="+string(initStandard))
 	nsMaps := make(map[configs.NamespaceType]string)
+	// 将配置文件中的Namespace配置转换一下
 	for _, ns := range c.config.Namespaces {
 		if ns.Path != "" {
 			nsMaps[ns.Type] = ns.Path
 		}
 	}
 	_, sharePidns := nsMaps[configs.NEWPID]
+	//将配置文件中挂载信息、CloneFlag信息序列化为data
 	data, err := c.bootstrapData(c.config.Namespaces.CloneFlags(), nsMaps)
 	if err != nil {
 		return nil, err

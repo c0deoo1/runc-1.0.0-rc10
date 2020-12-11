@@ -23,7 +23,7 @@ MAN_PAGES_BASE = $(notdir $(MAN_PAGES))
 MAN_INSTALL_PATH := ${PREFIX}/share/man/man8/
 
 RELEASE_DIR := $(CURDIR)/release
-
+# 从文件中读取到version信息，通过 -ldflags "-X main.gitCommit=${COMMIT} -X main.version=${VERSION} $(EXTRA_LDFLAGS)" 类似的方式来注入
 VERSION := ${shell cat ./VERSION}
 
 SHELL := $(shell command -v bash 2>/dev/null)

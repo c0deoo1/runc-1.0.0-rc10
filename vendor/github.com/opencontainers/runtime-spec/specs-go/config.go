@@ -2,6 +2,7 @@ package specs
 
 import "os"
 
+// runtime-spec仅仅定义了Config文件的格式
 // Spec is the base configuration for the container.
 type Spec struct {
 	// Version of the Open Container Initiative Runtime Specification with which the bundle complies.

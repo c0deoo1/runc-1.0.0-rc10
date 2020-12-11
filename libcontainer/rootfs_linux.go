@@ -82,6 +82,7 @@ func prepareRootfs(pipe io.ReadWriter, iConfig *initConfig) (err error) {
 	// root, so that the old root is still available in the hooks for any mount
 	// manipulations.
 	// Note that iConfig.Cwd is not guaranteed to exist here.
+	// 通知父进程去做相关的初始化
 	if err := syncParentHooks(pipe); err != nil {
 		return err
 	}

@@ -77,7 +77,7 @@ struct nlconfig_t {
 	size_t uidmap_len;
 	char *gidmap;
 	size_t gidmap_len;
-	char *namespaces;
+	char *namespaces;   //namespace路径信息
 	size_t namespaces_len;
 	uint8_t is_setgroup;
 
@@ -356,6 +356,7 @@ static int initpipe(void)
 	int pipenum;
 	char *initpipe, *endptr;
 
+    //从环境变量中拿到_LIBCONTAINER_INITPIPE
 	initpipe = getenv("_LIBCONTAINER_INITPIPE");
 	if (initpipe == NULL || *initpipe == '\0')
 		return -1;
@@ -465,6 +466,7 @@ static void nl_parse(int fd, struct nlconfig_t *config)
 			config->oom_score_adj_len = payload_len;
 			break;
 		case NS_PATHS_ATTR:
+		    //解析namespace 路径信息
 			config->namespaces = current;
 			config->namespaces_len = payload_len;
 			break;
@@ -500,6 +502,7 @@ void nl_free(struct nlconfig_t *config)
 	free(config->data);
 }
 
+//加入到指定的namespace中去
 void join_namespaces(char *nslist)
 {
 	int num = 0, i;
@@ -556,7 +559,7 @@ void join_namespaces(char *nslist)
 
 	for (i = 0; i < num; i++) {
 		struct namespace_t ns = namespaces[i];
-
+        //调用setns来设置namespace
 		if (setns(ns.fd, ns.ns) < 0)
 			bail("failed to setns to %s", ns.path);
 
@@ -594,6 +597,7 @@ void nsexec(void)
 	 * We need to re-exec if we are not in a cloned binary. This is necessary
 	 * to ensure that containers won't be able to access the host binary
 	 * through /proc/self/exe. See CVE-2019-5736.
+	 * TODO 有空研究下这里的CVE-2019-5736漏洞
 	 */
 	if (ensure_cloned_binary() < 0)
 		bail("could not ensure we are a cloned binary");
@@ -772,6 +776,7 @@ void nsexec(void)
 						 * We need to send both back because we can't reap the first child we created (CLONE_PARENT).
 						 * It becomes the responsibility of our parent to reap the first child.
 						 */
+						 // 这里通知父进程相关的pid信息
 						len = dprintf(pipenum, "{\"pid\": %d, \"pid_first\": %d}\n", child, first_child);
 						if (len < 0) {
 							kill(child, SIGKILL);

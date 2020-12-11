@@ -61,6 +61,7 @@ type subsystem interface {
 	Set(path string, cgroup *configs.Cgroup) error
 }
 
+//runc使用的CGroup实现
 type Manager struct {
 	mu       sync.Mutex
 	Cgroups  *configs.Cgroup
@@ -161,6 +162,7 @@ func (m *Manager) Apply(pid int) (err error) {
 		return cgroups.EnterPid(m.Paths, pid)
 	}
 
+	//调用各个子系统来实施资源限制
 	for _, sys := range m.getSubsystems() {
 		// TODO: Apply should, ideally, be reentrant or be broken up into a separate
 		// create and join phase so that the cgroup hierarchy for a container can be
